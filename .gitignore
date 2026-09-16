@@ -1,0 +1,11 @@
+/build*/
+__pycache__/
+*.py[cod]
+*.o
+*.exe
+/test_compact
+/test_expanded
+/tools/
+**/obj/
+**/bin/
+/Python

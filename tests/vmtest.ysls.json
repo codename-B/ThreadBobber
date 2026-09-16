@@ -1,0 +1,15 @@
+{
+  "Commands": [
+    {"YarnName": "sync_cmd", "Documentation": "Completes immediately; the test host records it.",
+     "Parameters": [{"Name": "value", "Type": "number", "Documentation": "Recorded value"}]},
+    {"YarnName": "async_cmd", "Documentation": "Leaves the VM waiting until the test host continues.",
+     "Parameters": [{"Name": "label", "Type": "string", "Documentation": "Recorded label"}]},
+    {"YarnName": "flag_cmd", "Documentation": "Bool argument round trip.",
+     "Parameters": [{"Name": "on", "Type": "bool", "Documentation": "Recorded flag"}]}
+  ],
+  "Functions": [
+    {"YarnName": "host_number", "Documentation": "Returns a number the test host controls.", "ReturnType": "number", "Parameters": []},
+    {"YarnName": "host_flag", "Documentation": "Returns a bool the test host controls.", "ReturnType": "bool",
+     "Parameters": [{"Name": "index", "Type": "number", "Documentation": "Which flag"}]}
+  ]
+}

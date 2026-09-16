@@ -1,0 +1,13 @@
+{
+  "projectFileVersion": 4,
+  "sourceFiles": [
+    "vmtest.yarn"
+  ],
+  "excludeFiles": [],
+  "localisation": {},
+  "baseLanguage": "en",
+  "definitions": "vmtest.ysls.json",
+  "compilerOptions": {
+    "diagnosticsSeverity": {}
+  }
+}

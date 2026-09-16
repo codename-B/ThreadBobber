@@ -1,0 +1,50 @@
+// Runtime test program for tests/test.c and the driver workloads.
+title: Expressions
+---
+<<declare $n = 0 as number>>
+<<declare $b = false as bool>>
+<<declare $s = "salt" as string>>
+<<declare $counter = 0 as number>>
+<<set $n = (3 + 4) * 2 - 10 / 4>>
+<<set $b = $n > 10 and not ($s == "wake") or false>>
+<<set $s = "wake">>
+<<set $n = $n % 5 + min(9, 2) + max(-1, 1) + round(2.5) + round(3.5) + floor(-1.5) + ceil(1.2) + inc(2) + dec(2.5) + int(-3.7) + decimal(4.25)>>
+Result: {$n} {$b} {$s} #line:expr_result
+===
+title: Options
+---
+Prompt: choose #line:options_prompt
+-> Always #line:opt_always
+    Picked: always #line:picked_always
+-> Sometimes <<if $n >= 2>> #line:opt_sometimes
+    Picked: sometimes #line:picked_sometimes
+-> Rare <<once>> #line:opt_rare
+    Picked: rare #line:picked_rare
+-> Hosted <<if host_flag(1)>> #line:opt_hosted
+    Picked: hosted #line:picked_hosted
+Done: options #line:options_done
+===
+title: Commands
+---
+<<sync_cmd 7>>
+Between: commands #line:between_commands
+<<async_cmd "pause">>
+<<flag_cmd true>>
+After: commands {host_number()} #line:after_commands
+===
+title: Loop
+---
+<<set $counter = $counter + 1>>
+<<jump Loop>>
+===
+title: Recurse
+---
+<<detour Recurse>>
+===
+title: Empty
+---
+<<if false>>
+-> Never <<if false>> #line:never
+    Nope #line:nope
+<<endif>>
+===

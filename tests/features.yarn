@@ -1,0 +1,179 @@
+title: OptionExpressions
+---
+<<declare $price = 7>>
+<<declare $name = "tea">>
+-> Buy {$name} for {$price} #line:buy
+    Purchased. #line:purchased
+-> Sell {$name} for {$price - 2} <<if false>> #line:sell
+    Sold. #line:sold
+===
+
+title: CommandExpressions
+---
+<<give "{$name}" {$price + 1} {true}>>
+<<wait 1>>
+===
+
+title: Numbers
+---
+{round_places(2.5, 0)} {round_places(-3.5, 0)} {round_places(3.125, 2) == 3.12} {random_range_float(1.5, 1.5)} #line:numbers
+===
+
+title: SmartVariables
+---
+<<declare $double_price = $price * 2>>
+<<declare $expensive = $double_price > 15>>
+{$double_price} {$expensive} #line:smart_before
+<<set $price = 9>>
+{$double_price} {$expensive} #line:smart_after
+===
+
+title: Saliency
+---
+<<declare $eligible = false>>
+{has_any_content("Offer")} {has_any_content("NoOffer")} {has_any_content("Numbers")} {has_any_content("Missing")} #line:availability
+<<detour Offer>>
+<<set $eligible = true>>
+<<detour Offer>>
+=> Chosen. <<if $eligible>> #line:chosen
+=> Not chosen. <<if not $eligible>> #line:not_chosen
+===
+title: Offer
+subtitle: Ordinary
+when: not $eligible
+---
+Ordinary offer. #line:ordinary
+===
+title: Offer
+subtitle: Special
+when: $eligible
+---
+Special offer. #line:special
+===
+title: NoOffer
+subtitle: Unavailable
+when: false
+---
+Unavailable. #line:unavailable
+===
+title: Fairness
+---
+<<detour Cycle>>
+<<detour Cycle>>
+===
+title: Cycle
+subtitle: First
+when: always
+---
+First item. #line:cycle_first
+===
+title: Cycle
+subtitle: Second
+when: always
+---
+Second item. #line:cycle_second
+===
+title: Enums
+---
+<<enum Food>>
+    <<case Apple>>
+    <<case Orange>>
+<<endenum>>
+<<declare $food = Food.Apple>>
+{$food == Food.Apple} {$food != Food.Orange} #line:enums_before
+<<set $food = Food.Orange>>
+{$food == Food.Apple} {$food != Food.Orange} #line:enums_after
+===
+
+title: Strings
+---
+<<declare $greeting = "">>
+<<declare $index = 0>>
+<<set $greeting = $name + "!">>
+-> {$greeting + " buy"} #line:string_option
+    {$greeting} {string($price)} {number("12.5") == 12.5} {bool("TrUe")} #line:string_values
+<<set $greeting = $greeting + " again">>
+{$greeting} #line:string_after
+===
+title: StringStress
+---
+<<set $greeting = "">>
+<<set $index = 0>>
+<<jump StringLoop>>
+===
+title: StringLoop
+---
+<<set $greeting = $greeting + "x">>
+<<set $index += 1>>
+<<if $index < 32>>
+    <<jump StringLoop>>
+<<endif>>
+{$greeting} #line:string_stress
+===
+title: Expressions
+---
+<<declare $n = 0 as number>>
+<<declare $b = false as bool>>
+<<declare $s = "salt" as string>>
+<<declare $counter = 0 as number>>
+<<set $n = (3 + 4) * 2 - 10 / 4>>
+<<set $b = $n > 10 and not ($s == "wake") or false>>
+<<set $s = "wake">>
+<<set $n = $n % 5 + min(9, 2) + max(-1, 1) + round(2.5) + round(3.5) + floor(-1.5) + ceil(1.2) + inc(2) + dec(2.5) + int(-3.7) + decimal(4.25)>>
+Result: {$n} {$b} {$s} #line:expr_result
+===
+title: Visits
+---
+<<detour Helper>>
+<<detour Helper>>
+Visits: {visited_count("Helper")} {visited("Visits")} {visited("Helper")} #line:visits_line
+<<jump VisitsEnd>>
+===
+title: Helper
+---
+Helper: inside #line:helper_inside
+===
+title: VisitsEnd
+---
+End: {visited_count("Visits")} #line:visits_end
+===
+title: ParityStart
+---
+Narrator: A branching parity check. #line:p_01
+<<set $counter = 2>>
+<<if $counter * 3 == 6 and visited("ParityStart") == false>>
+    Narrator: Arithmetic and visited agree. #line:p_02
+<<endif>>
+-> First road #line:p_opt1
+    <<detour ParityDetour>>
+    Narrator: Back from the detour. #line:p_03
+-> Second road <<if $counter > 5>> #line:p_opt2
+    Narrator: Unreachable. #line:p_04
+-> Third road #line:p_opt3
+    <<sync_cmd 3>>
+    <<jump ParityEnd>>
+Narrator: Fell through to the end. #line:p_05
+<<jump ParityEnd>>
+===
+title: ParityDetour
+---
+Narrator: Inside the detour, counter is {$counter}. #line:p_06
+-> Only choice <<once>> #line:p_opt4
+    Narrator: Once only. #line:p_07
+-> Other choice #line:p_opt5
+    Narrator: Other. #line:p_08
+===
+title: ParityEnd
+---
+Narrator: Visited start {visited_count("ParityStart")} detour {visited_count("ParityDetour")}. #line:p_09
+<<if visited("ParityDetour")>>
+    Narrator: The detour left a mark. #line:p_10
+<<else>>
+    Narrator: No detour taken. #line:p_11
+<<endif>>
+===
+title: Modulo
+---
+Modulo: {11.5 % 5} {12.5 % 5} {5.5 % 2.5} #line:modulo_even
+Signs: {-7.5 % 2} {-7 % 3} {7 % -3} #line:modulo_signs
+===
