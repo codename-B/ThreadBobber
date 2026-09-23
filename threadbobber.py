@@ -575,11 +575,6 @@ def compile_program(args):
                 }
             )
             return len(commands) - 1
-        if name not in commands_decl:
-            raise CompileError(
-                "node %s: command <<%s>> is not declared in the project .ysls.json"
-                % (node_name, text)
-            )
         d = commands_decl[name]
         if len(toks) != len(d["params"]):
             raise CompileError(
