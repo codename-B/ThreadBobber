@@ -2,7 +2,7 @@
 Copyright (c) 2026, codename-B
 SPDX-License-Identifier: MIT
 
-ThreadBobber 1.0.0 - a small C runtime for Yarn Spinner 3.2.2 dialogue.
+ThreadBobber 1.1.0 - a small C runtime for Yarn Spinner 3.3.0 dialogue.
 
 Independent implementation; not an official Yarn Spinner package.
 https://github.com/YarnSpinnerTool/YarnSpinner
@@ -16,12 +16,12 @@ See README.md for conversion, integration and compatibility details.
 #ifndef THREADBOBBER_H
 #define THREADBOBBER_H
 
-#define THREADBOBBER_VERSION "1.0.0"
+#define THREADBOBBER_VERSION "1.1.0"
 #define THREADBOBBER_VERSION_MAJOR 1
-#define THREADBOBBER_VERSION_MINOR 0
+#define THREADBOBBER_VERSION_MINOR 1
 #define THREADBOBBER_VERSION_PATCH 0
 /// The Yarn Spinner release whose compiler output this runtime executes.
-#define THREADBOBBER_YARN_VERSION "3.2.2"
+#define THREADBOBBER_YARN_VERSION "3.3.0"
 
 #include <stdint.h>
 #ifdef __cplusplus
@@ -154,7 +154,9 @@ typedef enum
     ThreadBobberValueType_None = 0,
     ThreadBobberValueType_Number = 1,
     ThreadBobberValueType_Boolean = 2,
-    ThreadBobberValueType_String = 3
+    ThreadBobberValueType_String = 3,
+    /// FunctionHandler may write this result type to defer its return value.
+    ThreadBobberValueType_Pending = 4
 } ThreadBobberValueType;
 
 /// A number, boolean or string identifier. Numbers contain the bits of an IEEE 754 float.
@@ -283,7 +285,8 @@ typedef enum
     ThreadBobberState_WaitingForOptions,
     ThreadBobberState_WaitingForCommand,
     ThreadBobberState_Complete,
-    ThreadBobberState_Error
+    ThreadBobberState_Error,
+    ThreadBobberState_WaitingForFunction
 } ThreadBobberState;
 
 /// The reason dialogue could not continue.
@@ -352,6 +355,9 @@ typedef struct
                           const ThreadBobberValue *parameters, unsigned parameterCount);
 
     /// Calls a function. Write its return value to result and return non-zero.
+    /// To finish later, set result->Type to ThreadBobberValueType_Pending and
+    /// return success. Parameters are borrowed for the duration of the call.
+    /// Smart-variable evaluations require an immediate result.
     /// Return zero if the function could not be called.
     int (*FunctionHandler)(struct ThreadBobberDialogue *dialogue, unsigned functionID,
                            const ThreadBobberValue *parameters, unsigned parameterCount,
@@ -387,7 +393,7 @@ typedef struct ThreadBobberDialogue
     uint8_t State, Error, StackCount, CallStackCount, OptionCount, SubstitutionCount;
     uint32_t InstructionCount, RemainingInstructions;
     ThreadBobberEvaluation Evaluations[THREADBOBBER_EVALUATIONS];
-    uint8_t EvaluationCount, CandidateCount, ExecutionActive;
+    uint8_t EvaluationCount, CandidateCount, ExecutionActive, PendingReturnType;
     ThreadBobberSaliencyCandidate Candidates[THREADBOBBER_CANDIDATES];
 } ThreadBobberDialogue;
 
@@ -432,7 +438,7 @@ int ThreadBobber_SetNode(ThreadBobberDialogue *dialogue, unsigned node);
 /// Gets the index of a node by name, or -1 if no matching node exists.
 int ThreadBobber_FindNode(const ThreadBobberProgram *program, const char *name);
 
-/// Runs dialogue until it delivers a line, options or an asynchronous command,
+/// Runs dialogue until it delivers a line, options, an asynchronous command or a deferred function,
 /// completes, or encounters an error. Returns the resulting state. Calling Run
 /// while dialogue is waiting does not advance it.
 ThreadBobberState ThreadBobber_Run(ThreadBobberDialogue *dialogue);
@@ -446,6 +452,16 @@ ThreadBobberState ThreadBobber_RunFor(ThreadBobberDialogue *dialogue, unsigned i
 /// Marks the current line or command as complete. Returns non-zero on success.
 /// Call Run to advance dialogue. Calling this method in another state is an error.
 int ThreadBobber_Continue(ThreadBobberDialogue *dialogue);
+
+/// Supplies the result of a deferred function. Call Run to continue the expression.
+int ThreadBobber_CompleteFunction(ThreadBobberDialogue *dialogue, ThreadBobberValue value);
+
+/// Ends the current conversation and discards pending VM work. Call between Run calls.
+/// The host owns cancellation of its pending operations and must discard late results.
+void ThreadBobber_Stop(ThreadBobberDialogue *dialogue);
+
+/// Continues after the option group without selecting a branch.
+int ThreadBobber_SkipOptions(ThreadBobberDialogue *dialogue);
 
 /// Selects an available option by its index in Options. Returns non-zero on success.
 /// An unavailable or out-of-range index leaves the option set unchanged.
@@ -531,7 +547,7 @@ enum
 };
 
 /// Saves execution state to a buffer. Returns the number of bytes written, or
-/// zero if the buffer is too small or dialogue is running or in error.
+/// zero if the buffer is too small, or while running, awaiting a function or in error.
 unsigned ThreadBobber_SaveState(const ThreadBobberDialogue *dialogue, unsigned char *output,
                                 unsigned capacity);
 
@@ -1154,24 +1170,6 @@ static int CallBuiltin(ThreadBobberDialogue *dialogue, unsigned id, const Thread
         *r = ThreadBobber_CreateNumber((float)value);
         return 1;
     }
-    case ThreadBobberFunction_RandomRangeFloat:
-    {
-        // Yarn Spinner 3.2.2 samples integer steps starting at the original float minimum.
-        if (!isfinite(x) || !isfinite(y) || x < -2147483648.0 || x >= 2147483647.0 ||
-            y < -2147483648.0 || y >= 2147483647.0)
-        {
-            return 0;
-        }
-        int64_t range = (int64_t)y - (int64_t)x + 1;
-        if (range < 0 || range > INT32_MAX)
-        {
-            return 0;
-        }
-        *r = ThreadBobber_CreateNumber(
-            x +
-            (range ? (float)dialogue->Library->RandomHandler(dialogue, (uint32_t)range - 1) : 0));
-        return 1;
-    }
     case ThreadBobberFunction_ValueEqualTo:
     case ThreadBobberFunction_ValueNotEqualTo:
     {
@@ -1322,17 +1320,8 @@ static int CallBuiltin(ThreadBobberDialogue *dialogue, unsigned id, const Thread
         *r = ThreadBobber_CreateNumber(x / y);
         return 1;
     case ThreadBobberFunction_NumberModulo:
-    {
-        // Yarn Spinner converts both operands to Int32 before taking the remainder, so
-        // 11.5 % 5 is 2. A divisor that rounds to zero stops the dialogue.
-        int32_t dividend, divisor;
-        if (!ToInt32(x, &dividend) || !ToInt32(y, &divisor) || divisor == 0)
-        {
-            return 0;
-        }
-        *r = ThreadBobber_CreateNumber(divisor == -1 ? 0.f : (float)(dividend % divisor));
+        *r = ThreadBobber_CreateNumber(fmodf(x, y));
         return 1;
-    }
     case ThreadBobberFunction_NumberUnaryMinus:
         *r = ThreadBobber_CreateNumber(-x);
         return 1;
@@ -1403,36 +1392,31 @@ static int CallBuiltin(ThreadBobberDialogue *dialogue, unsigned id, const Thread
                                        65536.f);
         return 1;
     case ThreadBobberFunction_RandomRange:
+    case ThreadBobberFunction_RandomRangeFloat:
     {
-        if (!isfinite(x) || !isfinite(y) || x < -2147483648.0 || x >= 2147483647.0 ||
-            y < -2147483648.0 || y >= 2147483647.0)
+        int32_t lo, hi;
+        if (!ToInt32(x, &lo) || !ToInt32(y, &hi))
         {
             return 0;
         }
-        int64_t lo = (int64_t)x, hi = (int64_t)y;
-        if (hi < lo)
+        int64_t range = (int64_t)hi - lo + 1;
+        if (range < 0 || range > INT32_MAX)
         {
-            int64_t t = lo;
-            lo = hi;
-            hi = t;
+            return 0;
         }
-        *r = ThreadBobber_CreateNumber(
-            (float)(lo + (int64_t)dialogue->Library->RandomHandler(dialogue, (uint32_t)(hi - lo))));
+        int64_t offset = range ? dialogue->Library->RandomHandler(dialogue, (uint32_t)range - 1) : 0;
+        *r = ThreadBobber_CreateNumber((float)(lo + offset));
         return 1;
     }
     case ThreadBobberFunction_Dice:
     {
-        if (!isfinite(x) || x < -2147483648.0 || x >= 2147483647.0)
+        int32_t sides;
+        if (!ToInt32(x, &sides) || sides < 0)
         {
             return 0;
         }
-        long sides = (long)x;
-        if (sides < 1)
-        {
-            sides = 1;
-        }
-        *r = ThreadBobber_CreateNumber(
-            1.f + (float)dialogue->Library->RandomHandler(dialogue, (uint32_t)(sides - 1)));
+        *r = ThreadBobber_CreateNumber(1.f + (sides ?
+            (float)dialogue->Library->RandomHandler(dialogue, (uint32_t)sides - 1) : 0.f));
         return 1;
     }
     case ThreadBobberFunction_Min:
@@ -1465,6 +1449,24 @@ static int CallBuiltin(ThreadBobberDialogue *dialogue, unsigned id, const Thread
     default:
         return 0;
     }
+}
+
+static int PushFunctionResult(ThreadBobberDialogue *dialogue, unsigned returnType,
+                              ThreadBobberValue result)
+{
+    if (returnType != ThreadBobberValueType_None)
+    {
+        if (result.Type != returnType ||
+            (result.Type == ThreadBobberValueType_String &&
+             !IsValidString(dialogue, result.Bits)) ||
+            (result.Type == ThreadBobberValueType_Boolean && result.Bits > 1))
+        {
+            SetError(dialogue, ThreadBobberError_TypeMismatch);
+            return 0;
+        }
+        return Push(dialogue, result);
+    }
+    return 1;
 }
 
 static int CallFunction(ThreadBobberDialogue *dialogue, unsigned functionIndex)
@@ -1528,24 +1530,23 @@ static int CallFunction(ThreadBobberDialogue *dialogue, unsigned functionIndex)
     {
         dialogue->Strings->Pinned = pinned;
     }
-    if (!ok)
+    if (!ok || dialogue->State == ThreadBobberState_Error)
     {
         SetError(dialogue, ThreadBobberError_HostError);
         return 0;
     }
-    if (f->ReturnType != ThreadBobberValueType_None)
+    if (!f->Builtin && result.Type == ThreadBobberValueType_Pending)
     {
-        if (result.Type != f->ReturnType ||
-            (result.Type == ThreadBobberValueType_String &&
-             !IsValidString(dialogue, result.Bits)) ||
-            (result.Type == ThreadBobberValueType_Boolean && result.Bits > 1))
+        if (dialogue->EvaluationCount)
         {
-            SetError(dialogue, ThreadBobberError_TypeMismatch);
+            SetError(dialogue, ThreadBobberError_HostError);
             return 0;
         }
-        return Push(dialogue, result);
+        dialogue->PendingReturnType = f->ReturnType;
+        dialogue->State = ThreadBobberState_WaitingForFunction;
+        return 1;
     }
-    return 1;
+    return PushFunctionResult(dialogue, f->ReturnType, result);
 }
 
 static int EnterNode(ThreadBobberDialogue *dialogue, unsigned node)
@@ -2164,6 +2165,42 @@ ThreadBobberState ThreadBobber_RunFor(ThreadBobberDialogue *dialogue, unsigned i
     return (ThreadBobberState)dialogue->State;
 }
 
+int ThreadBobber_CompleteFunction(ThreadBobberDialogue *dialogue, ThreadBobberValue value)
+{
+    if (dialogue->State != ThreadBobberState_WaitingForFunction || dialogue->ExecutionActive)
+    {
+        return 0;
+    }
+    if (!PushFunctionResult(dialogue, dialogue->PendingReturnType, value))
+    {
+        return 0;
+    }
+    dialogue->State = ThreadBobberState_Running;
+    return 1;
+}
+
+void ThreadBobber_Stop(ThreadBobberDialogue *dialogue)
+{
+    if (dialogue->Program && !dialogue->ExecutionActive)
+    {
+        ResetExecution(dialogue);
+        dialogue->State = ThreadBobberState_Complete;
+        dialogue->Error = ThreadBobberError_None;
+    }
+}
+
+int ThreadBobber_SkipOptions(ThreadBobberDialogue *dialogue)
+{
+    if (dialogue->State != ThreadBobberState_WaitingForOptions ||
+        !Push(dialogue, ThreadBobber_CreateBoolean(0)))
+    {
+        return 0;
+    }
+    dialogue->OptionCount = 0;
+    dialogue->State = ThreadBobberState_Running;
+    return 1;
+}
+
 int ThreadBobber_SetSelectedOption(ThreadBobberDialogue *dialogue, unsigned option)
 {
     if (dialogue->State != ThreadBobberState_WaitingForOptions)
@@ -2541,7 +2578,8 @@ unsigned ThreadBobber_SaveState(const ThreadBobberDialogue *dialogue, unsigned c
                  dialogue->OptionCount * (IdSize * 2 + 2 + THREADBOBBER_SUBSTITUTIONS * 5) +
                  dialogue->SubstitutionCount * 5;
     if (!dialogue->Program || !output || n > capacity || dialogue->CandidateCount ||
-        dialogue->EvaluationCount || dialogue->State == ThreadBobberState_Running ||
+        dialogue->EvaluationCount || dialogue->State == ThreadBobberState_WaitingForFunction ||
+        dialogue->State == ThreadBobberState_Running ||
         dialogue->State == ThreadBobberState_Error)
     {
         return 0;

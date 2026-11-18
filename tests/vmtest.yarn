@@ -30,7 +30,7 @@ title: Commands
 Between: commands #line:between_commands
 <<async_cmd "pause">>
 <<flag_cmd true>>
-After: commands {host_number()} #line:after_commands
+After: commands {host_number() + 0} #line:after_commands
 ===
 title: Loop
 ---
@@ -47,4 +47,8 @@ title: Empty
 -> Never <<if false>> #line:never
     Nope #line:nope
 <<endif>>
+===
+title: Deferred
+---
+Durability: {1 + durability_for("shovel")} #line:durability
 ===

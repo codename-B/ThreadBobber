@@ -1,15 +1,19 @@
 {
-  "Commands": [
-    {"YarnName": "sync_cmd", "Documentation": "Completes immediately; the test host records it.",
-     "Parameters": [{"Name": "value", "Type": "number", "Documentation": "Recorded value"}]},
-    {"YarnName": "async_cmd", "Documentation": "Leaves the VM waiting until the test host continues.",
-     "Parameters": [{"Name": "label", "Type": "string", "Documentation": "Recorded label"}]},
-    {"YarnName": "flag_cmd", "Documentation": "Bool argument round trip.",
-     "Parameters": [{"Name": "on", "Type": "bool", "Documentation": "Recorded flag"}]}
+  "version": 3,
+  "commands": [
+    {"yarnName": "sync_cmd", "definitionName": "sync_cmd", "documentation": "Completes immediately; the test host records it.",
+     "parameters": [{"name": "value", "type": "number", "documentation": "Recorded value"}]},
+    {"yarnName": "async_cmd", "definitionName": "async_cmd", "documentation": "Leaves the VM waiting until the test host continues.",
+     "parameters": [{"name": "label", "type": "string", "documentation": "Recorded label"}]},
+    {"yarnName": "flag_cmd", "definitionName": "flag_cmd", "documentation": "Bool argument round trip.",
+     "parameters": [{"name": "on", "type": "bool", "documentation": "Recorded flag"}]}
   ],
-  "Functions": [
-    {"YarnName": "host_number", "Documentation": "Returns a number the test host controls.", "ReturnType": "number", "Parameters": []},
-    {"YarnName": "host_flag", "Documentation": "Returns a bool the test host controls.", "ReturnType": "bool",
-     "Parameters": [{"Name": "index", "Type": "number", "Documentation": "Which flag"}]}
+  "functions": [
+    {"yarnName": "host_number", "definitionName": "host_number", "documentation": "Returns a number the test host controls.", "return": {"type": "number"},
+     "parameters": []},
+    {"yarnName": "host_flag", "definitionName": "host_flag", "documentation": "Returns a bool the test host controls.", "return": {"type": "bool"},
+     "parameters": [{"name": "index", "type": "number", "documentation": "Which flag"}]},
+    {"yarnName": "durability_for", "definitionName": "durability_for", "async": true, "return": {"type": "number"},
+     "parameters": [{"name": "tool", "type": "instance", "subtype": "Tool"}, {"name": "cancel", "type": "token"}]}
   ]
 }

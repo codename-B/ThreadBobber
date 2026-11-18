@@ -17,7 +17,7 @@ for the API reference.
 
 ThreadBobber is an independent implementation of Yarn Spinner's virtual machine
 and isn't an official Yarn Spinner package. It supports a documented subset of
-Yarn Spinner 3.2.2: see [Compatibility](#compatibility) for limitations. For the Yarn
+Yarn Spinner 3.3.0: see [Compatibility](#compatibility) for limitations. For the Yarn
 language itself, see the [Yarn Spinner documentation](https://docs.yarnspinner.dev/).
 
 
@@ -25,10 +25,10 @@ language itself, see the [Yarn Spinner documentation](https://docs.yarnspinner.d
 
 Keep using `.yarn`, `.yarnproject` and `.ysls.json` files with the Yarn Spinner
 editor tools. `threadbobber.py` runs the pinned official compiler and writes a
-`.c` and `.h` file. It needs Python 3.10 and `ysc` 3.2.2 on `PATH`:
+`.c` and `.h` file. It needs Python 3.10 and `ysc` 3.3.0 on `PATH`:
 
 ```bash
-dotnet tool install --global YarnSpinner.Console --version 3.2.2
+dotnet tool install --global YarnSpinner.Console --version 3.3.0
 python threadbobber.py game.yarnproject --out src --prefix game
 ```
 
@@ -90,8 +90,9 @@ ends:
 | State | Game action |
 | --- | --- |
 | `WaitingForLine` | Present the line, then call `Continue()`. |
-| `WaitingForOptions` | Present the options, then call `SetSelectedOption()`. |
+| `WaitingForOptions` | Present the options, then call `SetSelectedOption()` or `SkipOptions()`. |
 | `WaitingForCommand` | Handle the text command or finish the pending callback, then call `Continue()`. |
+| `WaitingForFunction` | Supply the result with `ThreadBobber_CompleteFunction()`, then call `Run()`. |
 | `Complete` | The conversation ended. Call `SetNode()` to start another. |
 | `Error` | Read `dialogue.Error`; the dialogue will not continue. |
 | `Running` | Returned by `RunFor()` when more work remains. Call it again next frame. |
@@ -107,6 +108,38 @@ Callbacks may read and write variables, create strings and call
 tables must be trusted; do not cast untrusted bytes to `ThreadBobberProgram`.
 
 
+### Functions that wait
+
+A Function can wait for the player to pick an item. Dialogue pauses until the
+Function returns the player's choice. [Functions that wait](https://yarnspinner.dev/docs/unity/05-connecting-to-your-game/02-functions/#functions-that-wait)
+
+In ThreadBobber, set `result->Type = ThreadBobberValueType_Pending` and return
+success from the handler. Copy any arguments you need later. When the game has
+the answer, pass a value of the declared return type to
+`ThreadBobber_CompleteFunction()`, then call `Run()`. Functions used in smart
+variables must return their value immediately.
+
+### Your own types
+
+Commands and Functions can take a game object as a parameter. A converter
+looks up the object using the text written in the Yarn Script. [Your own types](https://yarnspinner.dev/docs/unity/05-connecting-to-your-game/01-commands/#your-own-types)
+
+In a ThreadBobber handler, read an `instance` argument with
+`ThreadBobber_GetString()` and use that name to find the object in your game.
+The game owns the object's lifetime.
+
+### Async and cancellation
+
+A player can ask a Command to hurry up or move on to the next content. A
+Function waiting for a value can finish early when dialogue stops.
+[Async and Cancellation](https://yarnspinner.dev/docs/unity/05-connecting-to-your-game/08-async-and-cancellation/)
+
+In ThreadBobber, the game handles that input. To skip a pending command,
+finish its cleanup and call `Continue()`. To end dialogue, cancel outstanding
+game work and call `ThreadBobber_Stop()` between VM calls. Discard old
+completions before starting another conversation on the same dialogue.
+
+
 ## Strings and saving
 
 Dialogue that builds strings at runtime needs a `ThreadBobberStringStorage`
@@ -116,7 +149,8 @@ else may be reclaimed by the next allocation, so store a value in a variable
 before creating another string.
 
 `SaveState()` writes execution state into a buffer of `THREADBOBBER_SNAPSHOT_MAX`
-bytes while dialogue is idle, waiting or complete. Save the variables, the
+bytes while dialogue is idle, presenting content or complete. A deferred
+function must finish before its execution state can be saved. Save the variables, the
 program's `Hash`, the string store from `SaveStrings()` and your random state
 alongside it.
 
@@ -158,9 +192,10 @@ bytes of bytecode and 65535 entries per table.
 
 ## Compatibility
 
-Programs must come from YarnSpinner.Console 3.2.2, the release named by
-`THREADBOBBER_YARN_VERSION`. Generated headers reject a runtime with a different
-`THREADBOBBER_VERSION_MAJOR`, and snapshots record that version too.
+Programs must come from YarnSpinner.Console 3.3.0, the release named by
+`THREADBOBBER_YARN_VERSION`. Generated headers require the same ThreadBobber major
+version and at least the minor version used by the converter. Snapshots record
+the runtime major version.
 
 The runtime does not support `format` or `format_invariant` (the converter
 rejects them), markup parsing, localisation, custom saliency strategies or node
@@ -168,9 +203,8 @@ header queries. Numbers are formatted in the C locale. Games that localise
 dialogue should use the line ID and format `Substitutions` themselves.
 
 Random numbers come from the game's handler and will not match .NET's sequence.
-As in Yarn Spinner, `%` rounds both operands to integers (half to even) before
-taking the remainder. A divisor that rounds to zero stops dialogue with
-`ThreadBobberError_HostError`.
+Yarn Spinner 3.3 uses floating-point remainder for `%`. For example, `11.5 % 5`
+returns `1.5`, and a zero divisor produces NaN.
 
 
 ## Tests
@@ -184,7 +218,7 @@ traces against the official runtime and exercises the converter end to end, and
 
 ## Benchmarks
 
-Game Boy Advance, compact profile, devkitARM GCC 16.1 at `-Os`, measured in the
+ThreadBobber 1.0 benchmark measurements on Game Boy Advance, compact profile, devkitARM GCC 16.1 at `-Os`, measured in the
 NanoBoyAdvance emulator:
 
 | | |

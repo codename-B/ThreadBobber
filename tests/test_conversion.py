@@ -29,7 +29,7 @@ def convert(project, output, prefix, *extra):
     )
 
 
-@unittest.skipUnless(shutil.which("ysc"), "needs YarnSpinner.Console 3.2.2 on PATH")
+@unittest.skipUnless(shutil.which("ysc"), "needs YarnSpinner.Console 3.3.0 on PATH")
 class ConversionTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix="threadbobber-conversion-")
@@ -67,7 +67,8 @@ class ConversionTests(unittest.TestCase):
                     ignore=shutil.ignore_patterns("*_program.*", "*.py", "__pycache__"),
                 )
                 output = self.directory / "output" / prefix
-                self.succeed(relocated / Path(project).name, output, prefix)
+                extra = ["--definitions", str(relocated / "vmtest.ysls.json")] if prefix == "vmtest" else []
+                self.succeed(relocated / Path(project).name, output, prefix, *extra)
                 for path in sorted(output.iterdir()):
                     checked_in = (ROOT / project).parent / path.name
                     self.assertEqual(

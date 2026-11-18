@@ -8,7 +8,7 @@ availability, command text and completion. The Fairness scenario ignores event
 order. Choices are fed in order; once they run out, the first available option
 is chosen. Trace mismatches are collected and produce a nonzero exit status.
 
-Needs ysc 3.2.2 on PATH, .NET 10 and a C compiler.
+Needs ysc 3.3.0 on PATH, .NET 10 and a C compiler.
 """
 
 import argparse
@@ -37,6 +37,7 @@ SCENARIOS = [
     ("ParityStart", [0, 0]),
     ("ParityStart", [0, 1]),
     ("ParityStart", [2]),
+    ("ParityStart", [-1]),
     ("ParityDetour", [0]),
 ]
 
@@ -54,7 +55,7 @@ def main():
             if not executable
             else list(
                 (
-                    Path(executable).resolve().parent / ".store" / "yarnspinner.console" / "3.2.2"
+                    Path(executable).resolve().parent / ".store" / "yarnspinner.console" / "3.3.0"
                 ).glob("**/YarnSpinner.dll")
             )
         )
@@ -81,8 +82,8 @@ def main():
         return result.stdout
 
     version = run(["ysc", "--version"]).strip()
-    if version.split("+")[0] != "3.2.2":
-        raise RuntimeError("Expected YarnSpinner.Console 3.2.2, found " + version)
+    if version.split("+")[0] != "3.3.0":
+        raise RuntimeError("Expected YarnSpinner.Console 3.3.0, found " + version)
     run(["ysc", "compile", "tests/features.yarnproject", "-o", work, "-n", "features"])
     official = work / "official"
     run(
@@ -138,7 +139,7 @@ def main():
                 actual = "\n".join(sorted(actual.splitlines()))
             if expected != actual:
                 failures.append(label)
-                print(label + " differs from Yarn Spinner 3.2.2:")
+                print(label + " differs from Yarn Spinner 3.3.0:")
                 sys.stdout.writelines(
                     difflib.unified_diff(
                         expected.splitlines(True),
@@ -148,10 +149,10 @@ def main():
                     )
                 )
                 continue
-            print(label + " matches Yarn Spinner 3.2.2")
+            print(label + " matches Yarn Spinner 3.3.0")
     if failures:
         sys.exit(
-            "%d of %d scenario runs differ from Yarn Spinner 3.2.2."
+            "%d of %d scenario runs differ from Yarn Spinner 3.3.0."
             % (len(failures), 2 * len(SCENARIOS))
         )
 

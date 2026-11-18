@@ -92,7 +92,12 @@ int main(int argc, char **argv)
             }
             if (nextChoice < argc)
             {
-                selected = (unsigned)atoi(argv[nextChoice++]);
+                int choice = atoi(argv[nextChoice++]);
+                if (choice == -1 && ThreadBobber_SkipOptions(&Dialogue))
+                {
+                    continue;
+                }
+                selected = (unsigned)choice;
             }
             if (!ThreadBobber_SetSelectedOption(&Dialogue, selected))
             {

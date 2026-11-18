@@ -2,7 +2,7 @@
 """Compile Yarn Spinner sources with the official compiler and bake the result
 into constant tables for ThreadBobber.
 
-Pipeline:  *.yarn (+ .ysls.json declarations) --ysc 3.2.2--> .yarnc (protobuf,
+Pipeline:  *.yarn (+ .ysls.json declarations) --ysc 3.3.0--> .yarnc (protobuf,
 YarnSpinner/yarn_spinner.proto) + -Lines.csv + -Metadata.csv --this tool--> C.
 
 Requires the protobuf Python package and the checked-in yarn_spinner_pb2.py
@@ -29,8 +29,8 @@ from google.protobuf.unknown_fields import UnknownFieldSet
 
 import yarn_spinner_pb2 as yarn
 
-VERSION = "1.0.0"
-YSC_VERSION = "3.2.2"
+VERSION = "1.1.0"
+YSC_VERSION = "3.3.0"
 
 
 # ---- Yarn Spinner protobuf adapter ------------------------------------------
@@ -374,22 +374,24 @@ def read_definitions(paths):
     for path in paths:
         with open(path, encoding="utf-8-sig") as f:
             d = json.load(f)
-        for c in d.get("Commands", []):
-            if c["YarnName"] in commands:
-                raise CompileError("Duplicate command declaration: " + c["YarnName"])
-            commands[c["YarnName"]] = {
-                "id": len(commands),
-                "params": [p["Type"] for p in c.get("Parameters", [])],
-                "async": bool(c.get("Async", False)),
-            }
-        for fn in d.get("Functions", []):
-            if fn["YarnName"] in functions:
-                raise CompileError("Duplicate function declaration: " + fn["YarnName"])
-            functions[fn["YarnName"]] = {
-                "id": len(functions),
-                "params": [p["Type"] for p in fn.get("Parameters", [])],
-                "returns": fn["ReturnType"],
-            }
+        for kind, table in (("commands", commands), ("functions", functions)):
+            for action in d.get(kind, d.get(kind.title(), [])):
+                name = action.get("yarnName", action.get("YarnName"))
+                if not name or name in table:
+                    raise CompileError("Missing or duplicate %s name: %r" % (kind, name))
+                types = []
+                parameters = []
+                for param in action.get("parameters", action.get("Parameters", [])):
+                    typ = param.get("type", param.get("Type"))
+                    if typ in ("token", "CancellationToken", "LineCancellationToken"):
+                        continue
+                    parameters.append({**param, "type": typ})
+                    types.append("string" if typ in ("instance", "node") else typ)
+                entry = {"id": len(table), "params": types}
+                if kind == "functions":
+                    entry["parameters"] = parameters
+                    entry["returns"] = action.get("return", {}).get("type", action.get("ReturnType"))
+                table[name] = entry
     if len(commands) > 256 or len(functions) > 256:
         raise CompileError("A library may declare at most 256 commands and 256 functions.")
     return commands, functions
@@ -401,6 +403,7 @@ def compile_program(args):
         with open(path, encoding="utf-8-sig", newline="") as stream:
             return list(csv.DictReader(stream))
 
+    commands_decl, functions_decl = load_definitions(args.project, args.definitions)
     if args.project.endswith(".yarnc"):
         if not args.lines:
             raise CompileError(
@@ -419,9 +422,9 @@ def compile_program(args):
     prog = decode_program(blob)
     if not prog["nodes"]:
         raise CompileError("The compiled program contains no nodes.")
-    if prog["language_version"] != 4:
+    if prog["language_version"] not in (4, 5):
         raise CompileError(
-            "Expected the program version emitted by ysc 3.2.2 (4); found %s."
+            "Expected Yarn project language version 4 or 5; found %s."
             % prog["language_version"]
         )
 
@@ -459,7 +462,6 @@ def compile_program(args):
                 "instructions": query,
             }
         )
-    commands_decl, functions_decl = load_definitions(args.project, args.definitions)
     line_text = {r["id"]: r["text"] for r in lines_csv}
     line_tags = {r["id"]: r.get("tags", "") for r in meta_csv}
     pool = StringTable()
@@ -903,7 +905,8 @@ def write_outputs(
         ),
         "#define %s_PROGRAM_HASH 0x%08xu" % (upper_prefix, h),
         '#define %s_YSC_VERSION "%s"' % (upper_prefix, ysc_version.split("+")[0]),
-        "#if THREADBOBBER_VERSION_MAJOR != %s" % VERSION.split(".")[0],
+        "#if THREADBOBBER_VERSION_MAJOR != %s || THREADBOBBER_VERSION_MINOR < %s"
+        % tuple(VERSION.split(".")[:2]),
         '#error "This program was generated for ThreadBobber %s."' % VERSION,
         "#endif",
     ]

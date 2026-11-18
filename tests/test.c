@@ -78,6 +78,19 @@ static int HostFunction(ThreadBobberDialogue *dialogue, unsigned id, const Threa
     return 0;
 }
 
+static int DeferDurability(ThreadBobberDialogue *dialogue, unsigned id, const ThreadBobberValue *args,
+                           unsigned count, ThreadBobberValue *result)
+{
+    if (id != VMTEST_FUNCTION_durability_for || count != 1 ||
+        args[0].Type != ThreadBobberValueType_String ||
+        strcmp(ThreadBobber_GetString(dialogue, args[0].Bits), "shovel"))
+    {
+        return 0;
+    }
+    result->Type = ThreadBobberValueType_Pending;
+    return 1;
+}
+
 static uint32_t HalfRandom(ThreadBobberDialogue *dialogue, uint32_t bound)
 {
     (void)dialogue;
@@ -138,6 +151,35 @@ UTEST(vm, commands)
     ASSERT_STREQ(text, "After: commands 9");
     ASSERT_FALSE(ThreadBobber_SetSelectedOption(&dialogue, 0));
     ASSERT_EQ(dialogue.State, ThreadBobberState_Error);
+}
+
+UTEST(vm, deferred_function)
+{
+    const ThreadBobberLibrary library = {NULL, DeferDurability, NULL};
+    ASSERT_TRUE(ThreadBobber_Initialise(&dialogue, &vmtest_program, &library));
+    ASSERT_TRUE(ThreadBobber_SetNode(&dialogue, VMTEST_NODE_Deferred));
+    ASSERT_UEQ(ThreadBobber_Run(&dialogue), ThreadBobberState_WaitingForFunction);
+    unsigned instructions = dialogue.InstructionCount;
+    ASSERT_UEQ(ThreadBobber_RunFor(&dialogue, 8), ThreadBobberState_WaitingForFunction);
+    ASSERT_EQ(instructions, dialogue.InstructionCount);
+    unsigned char snapshot[THREADBOBBER_SNAPSHOT_MAX];
+    ASSERT_EQ(ThreadBobber_SaveState(&dialogue, snapshot, sizeof snapshot), 0u);
+    ASSERT_TRUE(ThreadBobber_CompleteFunction(&dialogue, ThreadBobber_CreateNumber(8)));
+    ASSERT_FALSE(ThreadBobber_CompleteFunction(&dialogue, ThreadBobber_CreateNumber(8)));
+    ASSERT_UEQ(ThreadBobber_Run(&dialogue), ThreadBobberState_WaitingForLine);
+    ThreadBobber_GetCurrentLineText(&dialogue, text, sizeof text);
+    ASSERT_STREQ(text, "Durability: 9");
+
+    ASSERT_TRUE(ThreadBobber_SetNode(&dialogue, VMTEST_NODE_Deferred));
+    ASSERT_UEQ(ThreadBobber_Run(&dialogue), ThreadBobberState_WaitingForFunction);
+    ASSERT_FALSE(ThreadBobber_CompleteFunction(&dialogue, ThreadBobber_CreateBoolean(1)));
+    ASSERT_UEQ(dialogue.Error, ThreadBobberError_TypeMismatch);
+
+    ASSERT_TRUE(ThreadBobber_SetNode(&dialogue, VMTEST_NODE_Deferred));
+    ASSERT_UEQ(ThreadBobber_Run(&dialogue), ThreadBobberState_WaitingForFunction);
+    ThreadBobber_Stop(&dialogue);
+    ASSERT_FALSE(ThreadBobber_CompleteFunction(&dialogue, ThreadBobber_CreateNumber(8)));
+    ASSERT_UEQ(ThreadBobber_Run(&dialogue), ThreadBobberState_Complete);
 }
 
 UTEST(vm, limits)
@@ -351,44 +393,15 @@ UTEST(regressions, numeric_limits)
     ASSERT_UEQ(Evaluate(ThreadBobberFunction_Random, 0, 0, 0, &result), ThreadBobberState_Error);
 }
 
-UTEST(regressions, modulo_rounds_operands_to_integers)
+UTEST(regressions, modulo_uses_floating_point_remainder)
 {
-    // Cover half-to-even rounding, signs, float precision boundaries and Int32 limits.
-    static const float cases[][3] = {
-        {11.5f, 5, 2},
-        {12.5f, 5, 2},
-        {13.5f, 5, 4},
-        {10.4f, 3, 1},
-        {0.5f, 3, 0},
-        {0.75f, 3, 1},
-        {-7, 3, -1},
-        {7, -3, 1},
-        {-7, -3, -1},
-        {-7.5f, 2, 0},
-        {5, 2.5f, 1},
-        {5.5f, 2.5f, 0},
-        {4194304.5f, 2, 0},
-        {4194305.5f, 4, 2},
-        {8388609.f, 2, 1},
-        {2147483520.f, 1000, 520},
-        {-2147483648.f, 3, -2},
-        {-2147483648.f, -1, 0},
-    };
-    for (unsigned i = 0; i < sizeof cases / sizeof cases[0]; i++)
-    {
-        float result = 1;
-        ASSERT_UEQ(Modulo(cases[i][0], cases[i][1], &result), ThreadBobberState_Complete);
-        ASSERT_EQ(result, cases[i][2]);
-    }
-    // Reject divisors that round to zero and operands outside the finite Int32 range.
-    static const float failing[][2] = {
-        {5, 0}, {5, 0.4f}, {5, -0.5f}, {5, NAN}, {INFINITY, 2}, {2147483648.f, 2}, {-3e9f, 2},
-    };
-    for (unsigned i = 0; i < sizeof failing / sizeof failing[0]; i++)
-    {
-        float result = 1;
-        ASSERT_UEQ(Modulo(failing[i][0], failing[i][1], &result), ThreadBobberState_Error);
-    }
+    float result;
+    ASSERT_UEQ(Modulo(11.5f, 5, &result), ThreadBobberState_Complete);
+    ASSERT_EQ(result, 1.5f);
+    ASSERT_UEQ(Modulo(-7.5f, 2, &result), ThreadBobberState_Complete);
+    ASSERT_EQ(result, -1.5f);
+    ASSERT_UEQ(Modulo(5, 0, &result), ThreadBobberState_Complete);
+    ASSERT_TRUE(isnan(result));
 }
 
 UTEST(regressions, rejects_truncated_snapshots_and_invalid_resume_positions)

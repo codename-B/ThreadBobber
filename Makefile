@@ -24,17 +24,17 @@ test: test_compact test_expanded
 	$(CXX) -std=c++11 -pedantic-errors $(EXPANDED) -DTHREADBOBBER_IMPLEMENTATION -x c++ -fsyntax-only -I. threadbobber.h
 
 # Compares traces with the official runtime and exercises the converter end to
-# end. Needs YarnSpinner.Console 3.2.2 (`dotnet tool install -g
-# YarnSpinner.Console --version 3.2.2`) and .NET 10.
+# end. Needs YarnSpinner.Console 3.3.0 (`dotnet tool install -g
+# YarnSpinner.Console --version 3.3.0`) and .NET 10.
 .PHONY: parity
 parity:
 	$(PYTHON) tests/parity.py --cc $(CC)
 	$(PYTHON) -m unittest discover -s tests -p "test_*.py"
 
-# Regenerates the checked-in test programs. Needs ysc 3.2.2.
+# Regenerates the checked-in test programs. Needs ysc 3.3.0.
 .PHONY: generate
 generate:
-	$(PYTHON) threadbobber.py tests/vmtest.yarnproject --out tests --prefix vmtest
+	$(PYTHON) threadbobber.py tests/vmtest.yarnproject --definitions tests/vmtest.ysls.json --out tests --prefix vmtest
 	$(PYTHON) threadbobber.py tests/features.yarnproject --out tests --prefix features
 
 .PHONY: clean
